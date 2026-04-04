@@ -46,17 +46,8 @@ export default function Dashboard() {
     setIsGettingPremium(false);
   };
 
-  const confirmUpgrade = (tierName) => {
-    useKavachStore.setState({
-      worker: {
-        ...worker,
-        policy: {
-          ...worker.policy,
-          tier: tierName,
-          premium: livePremium,
-        }
-      }
-    });
+  const confirmUpgrade = async (tierName) => {
+    await useKavachStore.getState().updatePolicyTier(tierName, livePremium);
     setIsUpgradeModalOpen(false);
     setUpgradingTier(null);
     setLivePremium(null);
@@ -275,6 +266,15 @@ export default function Dashboard() {
 
         {/* Recent Payouts */}
         <div className="fade-in-up" style={{ animationDelay: '0.3s' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <button
+              className="btn btn-primary"
+              style={{ padding: '6px 12px', fontSize: '13px', background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+              onClick={() => useKavachStore.getState().simulateClaim('Heavy Rainfall', 'rain', 320, 'Approved')}
+            >
+              🌧️ Simulate Claim
+            </button>
+          </div>
           <PayoutList payouts={payouts} />
         </div>
 

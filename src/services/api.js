@@ -3,7 +3,7 @@
  * Connects the frontend to the FastAPI ML service at :8000
  */
 
-const ML_BASE = 'http://localhost:8000';
+const ML_BASE = import.meta.env.VITE_ML_BASE_URL || 'http://localhost:8000';
 
 /**
  * Get Kavach risk score from ML backend (uses live weather + AQI + trained models)
@@ -75,4 +75,10 @@ export async function scoreFraud(params) {
   });
   if (!res.ok) throw new Error(`Fraud score API error: ${res.status}`);
   return res.json();
+}
+
+export async function pingML() {
+  try {
+    await fetch(`${ML_BASE}/health`, { method: 'GET' });
+  } catch (_) {}
 }

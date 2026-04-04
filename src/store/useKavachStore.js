@@ -1,19 +1,22 @@
 import { create } from 'zustand';
 import { getKavachScore, getPremiumPrediction, getCityConditions } from '../services/api';
+import { auth, db } from '../firebase';
+import { doc, setDoc, getDoc, collection, addDoc, getDocs, query, where, orderBy } from 'firebase/firestore';
 
 const mockWorker = {
-  name: "Ravi Kumar",
-  initial: "R",
+  name: "New Partner",
+  initial: "N",
   city: "Chennai",
-  zone: "Adyar · Zone 4",
-  platform: "Swiggy",
-  kavachScore: 67,
+  zone: "Unknown",
+  platform: "Zomato",
+  kavachScore: 50,
+  phone: "",
   policy: {
     tier: "Standard Shield",
-    premium: 65,
-    coverage: 3000,
-    renewsIn: 4,
-    status: "Active",
+    premium: 0,
+    coverage: 0,
+    renewsIn: 7,
+    status: "Inactive",
   },
 };
 
@@ -276,24 +279,12 @@ const useKavachStore = create((set, get) => ({
         pro: 'Pro Shield',
       };
 
-      set((s) => ({
-        onboarding: {
-          ...s.onboarding,
-          kavachScore,
-          recommendedPolicy: {
-            tier: tierNames[tier] || 'Standard Shield',
-            premium,
-            coverage,
-          },
-          weatherSummary: scoreResult.weather_summary,
-          aqiCategory: scoreResult.aqi_category,
-          modelVersion: premiumResult.breakdown?.model_version || 'ml',
-          mlLoading: false,
-          mlError: null,
-        },
-        // Also update the worker data for the dashboard
-        worker: {
+      set((s) => {
+        const finalWorker = {
           ...s.worker,
+          phone: s.onboarding.phone,
+          name: "Delivery Partner", // In a full app, collect name during onboarding
+          initial: "D",
           city: cityName,
           zone: s.onboarding.zone
             ? `${s.onboarding.zone.area} · ${s.onboarding.zone.zone}`
@@ -304,11 +295,34 @@ const useKavachStore = create((set, get) => ({
             tier: tierNames[tier] || 'Standard Shield',
             premium,
             coverage,
-            renewsIn: 4,
+            renewsIn: 7,
             status: 'Active',
           },
-        },
-      }));
+        };
+
+        // Persist to Firestore
+        if (auth.currentUser) {
+          setDoc(doc(db, 'workers', auth.currentUser.uid), { worker: finalWorker }, { merge: true }).catch(e => console.error("Firestore Error:", e));
+        }
+
+        return {
+          onboarding: {
+            ...s.onboarding,
+            kavachScore,
+            recommendedPolicy: {
+              tier: tierNames[tier] || 'Standard Shield',
+              premium,
+              coverage,
+            },
+            weatherSummary: scoreResult.weather_summary,
+            aqiCategory: scoreResult.aqi_category,
+            modelVersion: premiumResult.breakdown?.model_version || 'ml',
+            mlLoading: false,
+            mlError: null,
+          },
+          worker: finalWorker,
+        };
+      });
     } catch (err) {
       console.error('[ML] Score/Premium API failed:', err);
       // Fallback — still complete onboarding but with a warning
@@ -340,6 +354,68 @@ const useKavachStore = create((set, get) => ({
       set({ conditionsLoading: false });
     }
   },
+
+  /**
+   * Sync complete user profile from Firestore (calls at login)
+   */
+  loadUserFromFirestore: async (uid) => {
+    try {
+      const docSnap = await getDoc(doc(db, 'workers', uid));
+      if (docSnap.exists()) {
+        set({ worker: docSnap.data().worker });
+      }
+
+      // Load claims/payouts
+      const q = query(collection(db, 'claims'), where('uid', '==', uid), orderBy('date', 'desc'));
+      const qs = await getDocs(q);
+      const payouts = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (payouts.length > 0) {
+        set({ payouts });
+      } else {
+        set({ payouts: [] }); // Start fresh instead of mock if we checked db
+      }
+    } catch(err) {
+      console.error("[Firestore] load worker error:", err);
+    }
+  },
+
+  /**
+   * Updates only policy in Firestore and State explicitly
+   */
+  updatePolicyTier: async (tierName, premium) => {
+    const s = get();
+    const newPolicy = { ...s.worker.policy, tier: tierName, premium };
+    const finalWorker = { ...s.worker, policy: newPolicy };
+    
+    // Update State
+    set({ worker: finalWorker });
+    // Update DB
+    if (auth.currentUser) {
+      await setDoc(doc(db, 'workers', auth.currentUser.uid), { worker: finalWorker }, { merge: true });
+    }
+  },
+
+  /**
+   * Simulate a claim and save it to Firestore
+   */
+  simulateClaim: async (triggerName, icon, amount, status) => {
+    if (!auth.currentUser) return;
+    const s = get();
+    const newClaim = {
+      uid: auth.currentUser.uid,
+      trigger: triggerName,
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      amount: amount,
+      status: status,
+      icon: icon
+    };
+    try {
+      const docRef = await addDoc(collection(db, 'claims'), newClaim);
+      set({ payouts: [{ id: docRef.id, ...newClaim }, ...s.payouts] });
+    } catch(e) {
+      console.error("[Firestore] error adding claim", e);
+    }
+  }
 }));
 
 export default useKavachStore;
