@@ -301,9 +301,17 @@ const useKavachStore = create((set, get) => ({
         };
 
         // Persist to Firestore
-        if (auth.currentUser) {
-          setDoc(doc(db, 'workers', auth.currentUser.uid), { worker: finalWorker }, { merge: true }).catch(e => console.error("Firestore Error:", e));
+        let docId = auth.currentUser?.uid;
+        if (!docId) {
+          // Fallback to anonymous local ID if Auth is bypassed so Firebase DB demo still works
+          docId = localStorage.getItem('k_uid');
+          if (!docId) {
+            docId = `demo_${Date.now()}`;
+            localStorage.setItem('k_uid', docId);
+          }
         }
+
+        setDoc(doc(db, 'workers', docId), { worker: finalWorker }, { merge: true }).catch(e => console.error("Firestore Error:", e));
 
         return {
           onboarding: {

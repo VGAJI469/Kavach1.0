@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import useKavachStore from '../store/useKavachStore';
 import KavachScore from '../components/KavachScore';
-import usePhoneAuth from '../hooks/usePhoneAuth';
 import { lookupPincode } from '../services/api';
+import { signInAnonymously } from 'firebase/auth';
+import { auth } from '../firebase';
 
 const TOTAL_STEPS = 5;
 
@@ -393,127 +394,19 @@ function EarningsStep({ onboarding, setField }) {
   );
 }
 
-// ─── Step 4: Phone + OTP (Firebase Auth) ───
-function PhoneStep({ onboarding, setField, setOtpDigit, onComplete }) {
-  const [showOtp, setShowOtp] = useState(false);
-  const [countdown, setCountdown] = useState(30);
-  const otpRefs = useRef([]);
-  const { sendOtp, verifyOtp, loading, error: authError, devMode } = usePhoneAuth();
-
-  useEffect(() => {
-    if (!showOtp) return;
-    const timer = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) { clearInterval(timer); return 0; }
-        return c - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [showOtp]);
+// ─── Step 4: Phone (Bypassed OTP) ───
+function PhoneStep({ onboarding, setField, onComplete }) {
+  const [loading, setLoading] = useState(false);
 
   const handlePhoneSubmit = async () => {
     if (onboarding.phone.length === 10) {
-      const success = await sendOtp(onboarding.phone);
-      if (success) {
-        setShowOtp(true);
-        setCountdown(30);
-      }
+      setLoading(true);
+      // FAKE DELAY FOR REALISM
+      setTimeout(() => {
+        onComplete();
+      }, 500);
     }
   };
-
-  const handleResendOtp = async () => {
-    const success = await sendOtp(onboarding.phone);
-    if (success) {
-      setCountdown(30);
-    }
-  };
-
-  const handleOtpChange = useCallback((index, value) => {
-    if (!/^\d?$/.test(value)) return;
-    setOtpDigit(index, value);
-
-    if (value && index < 5) {
-      otpRefs.current[index + 1]?.focus();
-    }
-
-    // Check if all filled — verify with Firebase
-    setTimeout(async () => {
-      const otp = useKavachStore.getState().onboarding.otp;
-      const updatedOtp = [...otp];
-      updatedOtp[index] = value;
-      if (updatedOtp.every((d) => d !== '')) {
-        const code = updatedOtp.join('');
-        const user = await verifyOtp(code);
-        if (user) {
-          onComplete();
-        }
-      }
-    }, 100);
-  }, [setOtpDigit, onComplete, verifyOtp]);
-
-  const handleOtpKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !onboarding.otp[index] && index > 0) {
-      otpRefs.current[index - 1]?.focus();
-    }
-  };
-
-  if (showOtp) {
-    return (
-      <div style={{ textAlign: 'center' }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '36px', fontWeight: 700, marginBottom: '12px' }}>
-          Enter the code we sent you
-        </h1>
-        <p className="text-muted" style={{ marginBottom: '40px', fontSize: '16px' }}>
-          {devMode
-            ? '🧪 Dev mode — enter any 6-digit code to continue'
-            : `We sent a 6-digit code to +91 ${onboarding.phone}`}
-        </p>
-
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '24px' }}>
-          {onboarding.otp.map((digit, i) => (
-            <input
-              key={i}
-              ref={(el) => (otpRefs.current[i] = el)}
-              type="text"
-              inputMode="numeric"
-              className="otp-input"
-              value={digit}
-              onChange={(e) => handleOtpChange(i, e.target.value)}
-              onKeyDown={(e) => handleOtpKeyDown(i, e)}
-              maxLength={1}
-              autoFocus={i === 0}
-            />
-          ))}
-        </div>
-
-        {authError && (
-          <p style={{ color: 'var(--red)', fontSize: '14px', marginBottom: '12px' }}>
-            {authError}
-          </p>
-        )}
-
-        {loading && (
-          <p style={{ color: 'var(--green-primary)', fontSize: '14px', marginBottom: '12px' }}>
-            Verifying...
-          </p>
-        )}
-
-        <p className="text-muted">
-          {countdown > 0 ? (
-            `Resend in 0:${countdown.toString().padStart(2, '0')}`
-          ) : (
-            <button
-              onClick={handleResendOtp}
-              disabled={loading}
-              style={{ background: 'none', border: 'none', color: 'var(--green-primary)', cursor: 'pointer', fontWeight: 500, fontSize: '14px' }}
-            >
-              Resend code
-            </button>
-          )}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div style={{ textAlign: 'center' }}>
@@ -521,7 +414,7 @@ function PhoneStep({ onboarding, setField, setOtpDigit, onComplete }) {
         What's your phone number?
       </h1>
       <p className="text-muted" style={{ marginBottom: '40px', fontSize: '16px' }}>
-        We'll verify your number with a quick OTP.
+        Enter your number to link your policy. (OTP is bypassed for testing)
       </p>
 
       <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', gap: '8px' }}>
@@ -551,23 +444,14 @@ function PhoneStep({ onboarding, setField, setOtpDigit, onComplete }) {
         />
       </div>
 
-      {authError && (
-        <p style={{ color: 'var(--red)', fontSize: '14px', marginTop: '12px' }}>
-          {authError}
-        </p>
-      )}
-
       <button
         className="btn btn-primary btn-full"
         disabled={onboarding.phone.length !== 10 || loading}
         onClick={handlePhoneSubmit}
         style={{ maxWidth: '400px', marginTop: '24px' }}
       >
-        {loading ? 'Sending...' : 'Send OTP →'}
+        {loading ? 'Processing...' : 'Continue →'}
       </button>
-
-      {/* Invisible reCAPTCHA container */}
-      <div id="recaptcha-container" />
     </div>
   );
 }
