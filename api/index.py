@@ -29,6 +29,7 @@ app = FastAPI(
     title="Kavach ML Service",
     description="Live weather + AQI powered premium prediction and fraud scoring",
     version="2.0.0",
+    root_path="/api",
 )
 
 app.add_middleware(
@@ -348,17 +349,18 @@ async def lookup_pincode(pincode: str):
         raise HTTPException(status_code=400, detail="Invalid pincode — must be 6 digits")
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=12.0) as client:
             resp = await client.get(f"https://api.postalpincode.in/pincode/{pincode}")
             resp.raise_for_status()
             data = resp.json()
 
-        if not data or data[0].get("Status") != "Success":
-            raise HTTPException(status_code=404, detail=f"Pincode {pincode} not found")
+        if not data or not isinstance(data, list) or data[0].get("Status") != "Success":
+            # Call fallback for non-success (404, No data, or custom status)
+            return _fallback_pincode(pincode)
 
         post_offices = data[0].get("PostOffice", [])
         if not post_offices:
-            raise HTTPException(status_code=404, detail=f"No post offices for pincode {pincode}")
+            return _fallback_pincode(pincode)
 
         # Use the first post office for primary data
         po = post_offices[0]
@@ -386,13 +388,13 @@ async def lookup_pincode(pincode: str):
             "risk_score": risk["risk_score"],
             "is_coastal": risk["is_coastal"],
             "is_flood_prone": risk["is_flood_prone"],
-            # Return all post offices for that pincode
             "all_areas": [po.get("Name") for po in post_offices[:5]],
+            "source": "api",
         }
 
-    except httpx.HTTPError as e:
-        print(f"[Pincode] API error: {e}")
-        # Graceful fallback — derive basic info from pincode pattern
+    except Exception as e:
+        print(f"[Pincode] General lookup error: {e}")
+        # Always graceful fallback
         return _fallback_pincode(pincode)
 
 

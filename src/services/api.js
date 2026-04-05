@@ -3,7 +3,10 @@
  * Connects the frontend to the FastAPI ML service at :8000
  */
 
-const ML_BASE = import.meta.env.VITE_ML_BASE_URL || 'http://localhost:8000';
+const ML_BASE = import.meta.env.VITE_ML_BASE_URL || 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? 'http://localhost:8000' 
+    : '/api');
 
 /**
  * Get Kavach risk score from ML backend (uses live weather + AQI + trained models)
