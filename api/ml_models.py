@@ -199,7 +199,7 @@ def train_models():
     t0 = time.time()
 
     # ── Premium model ────────────────────────────────────────────────────
-    pdf = _generate_premium_data(5000)
+    pdf = _generate_premium_data(1000)
     X_prem = pdf.drop(columns=["premium"])
     y_prem = pdf["premium"]
 
@@ -212,7 +212,7 @@ def train_models():
     _premium_model.fit(X_prem, y_prem)
 
     # ── Fraud model ──────────────────────────────────────────────────────
-    fdf = _generate_fraud_data(5000)
+    fdf = _generate_fraud_data(1000)
     X_fraud = fdf.drop(columns=["is_fraud"])
     y_fraud = fdf["is_fraud"]
 
