@@ -1,11 +1,5 @@
 {
-  "functions": {
-    "api/*.py": {
-      "runtime": "python"
-    }
-  },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
