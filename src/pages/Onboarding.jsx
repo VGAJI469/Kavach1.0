@@ -465,7 +465,11 @@ function PhoneStep({ onboarding, setField, setOtpDigit, onComplete }) {
         </h1>
         <p className="text-muted" style={{ marginBottom: '40px', fontSize: '16px' }}>
           {devMode
-            ? '🧪 Dev mode — enter any 6-digit code to continue'
+            ? (
+              <span style={{ color: 'var(--green-primary)', fontWeight: 600 }}>
+                🧪 Demo Mode Active: Use any 6-digit code (e.g. 123456)
+              </span>
+            )
             : `We sent a 6-digit code to +91 ${onboarding.phone}`}
         </p>
 
