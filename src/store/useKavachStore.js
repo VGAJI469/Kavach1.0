@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getKavachScore, getPremiumPrediction, getCityConditions } from '../services/api';
+import { getKavachScore, getPremiumPrediction, getCityConditions, simulateTrigger as simulateTriggerAPI } from '../services/api';
 
 const mockWorker = {
   name: "Ravi Kumar",
@@ -338,6 +338,19 @@ const useKavachStore = create((set, get) => ({
     } catch (err) {
       console.error('[Live] Conditions fetch failed:', err);
       set({ conditionsLoading: false });
+    }
+  },
+
+  /**
+   * Phase 3: Simulate a disruption trigger (dev mode)
+   */
+  simulateTrigger: async (city, trigger, value) => {
+    try {
+      const result = await simulateTriggerAPI(city, trigger, value);
+      return result;
+    } catch (err) {
+      console.error('[Simulate] Trigger simulation failed:', err);
+      return { message: 'Simulation failed', decision: 'ERROR' };
     }
   },
 }));

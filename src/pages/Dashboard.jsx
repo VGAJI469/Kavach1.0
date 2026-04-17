@@ -8,6 +8,8 @@ import ForecastRow from '../components/ForecastRow';
 import EarningsCalendar from '../components/EarningsCalendar';
 import PayoutList from '../components/PayoutList';
 import DriverMap from '../components/DriverMap';
+import LifetimeShield from '../components/LifetimeShield';
+import PayoutConfirmation from '../components/PayoutConfirmation';
 
 export default function Dashboard() {
   const { worker, payouts, forecast, earnings, liveConditions, conditionsLoading, fetchLiveConditions } = useKavachStore();
@@ -18,13 +20,14 @@ export default function Dashboard() {
   const [livePremium, setLivePremium] = useState(null);
   const [isGettingPremium, setIsGettingPremium] = useState(false);
   const [showToast, setShowToast] = useState(null);
+  const [activePayout, setActivePayout] = useState(null);
 
   const handleUpgradeClick = async (tierName, weeklyEarnings) => {
     setUpgradingTier(tierName);
     setIsGettingPremium(true);
     try {
       const month = new Date().getMonth() + 1;
-      const res = await fetch(`${import.meta.env.VITE_ML_BASE_URL || 'http://localhost:8000'}/predict-premium`, {
+      const res = await fetch(`${import.meta.env.VITE_ML_BASE_URL || 'http://127.0.0.1:8000'}/predict-premium`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -89,6 +92,11 @@ export default function Dashboard() {
 
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
+      {/* Payout Confirmation Overlay */}
+      <PayoutConfirmation
+        claim={activePayout}
+        onDismiss={() => setActivePayout(null)}
+      />
       {/* Top Navigation */}
       <nav
         style={{
@@ -187,6 +195,11 @@ export default function Dashboard() {
               View Policy
             </span>
           </div>
+        </div>
+
+        {/* Lifetime Shield Stats */}
+        <div className="fade-in-up" style={{ animationDelay: '0.05s' }}>
+          <LifetimeShield />
         </div>
 
         {/* Score + Forecast Row */}

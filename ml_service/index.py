@@ -28,8 +28,7 @@ except Exception as e:
 app = FastAPI(
     title="Kavach ML Service",
     description="Live weather + AQI powered premium prediction and fraud scoring",
-    version="2.0.0",
-    root_path="/api",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -198,6 +197,175 @@ async def get_conditions(city: str):
         "aqi":             aqi,
         "active_triggers": active_triggers,
         "alert_level":     "red" if active_triggers else "green",
+    }
+
+
+# ── Phase 3: Enhanced Fraud Scoring ──────────────────────────────────────────
+
+class FraudInputV2(BaseModel):
+    gps_match:            int
+    active_deliveries:    int
+    duplicate_claim:      int
+    claims_30d:           int
+    account_age_days:     int
+    workers_inactive_pct: float
+    trigger_type:         str
+    trigger_value:        float
+    # New Phase 3 fields
+    coordinate_precision: float = 6.0
+    movement_speed_kmh:   float = 0.0
+    stationary_minutes:   float = 0.0
+    event_verified:       int   = 1
+    zone_affected:        int   = 1
+    platform_orders_2hr:  int   = 0
+    device_on_wifi:       int   = 0
+    battery_charging:     int   = 0
+
+
+@app.post("/fraud-score-v2")
+def fraud_score_v2(data: FraudInputV2):
+    score   = 0
+    reasons = []
+
+    # Existing signals
+    if not data.gps_match:
+        score += 40; reasons.append("GPS_ZONE_MISMATCH")
+    if data.active_deliveries > 4:
+        score += 25; reasons.append("ACTIVE_DURING_TRIGGER")
+    if data.duplicate_claim:
+        score += 50; reasons.append("DUPLICATE_CLAIM")
+    if data.claims_30d > 3:
+        score += 20; reasons.append("HIGH_CLAIM_VELOCITY")
+    if data.account_age_days < 7:
+        score += 15; reasons.append("NEW_ACCOUNT")
+    if data.workers_inactive_pct < 0.20:
+        score += 25; reasons.append("LOW_CITY_INACTIVITY")
+
+    # NEW: GPS Spoof Detection
+    if data.coordinate_precision < 4:
+        score += 15; reasons.append("GPS_SPOOF_LOW_PRECISION")
+    if data.movement_speed_kmh > 200:
+        score += 35; reasons.append("GPS_SPOOF_IMPOSSIBLE_SPEED")
+    if data.stationary_minutes > 60:
+        score += 20; reasons.append("GPS_SPOOF_STATIONARY_TOO_LONG")
+
+    # NEW: Historical Weather Cross-Check
+    if not data.event_verified:
+        score += 40; reasons.append("NO_VERIFIED_DISRUPTION_EVENT")
+    if not data.zone_affected:
+        score += 30; reasons.append("ZONE_NOT_IN_AFFECTED_AREA")
+
+    # NEW: Platform Activity Cross-Check
+    if data.platform_orders_2hr > 4:
+        score += 25; reasons.append("PLATFORM_ACTIVE_PRE_TRIGGER")
+
+    # NEW: Device State (home vs field)
+    if data.device_on_wifi and data.battery_charging:
+        score += 20; reasons.append("DEVICE_HOME_STATE_DURING_CLAIM")
+
+    score = min(score, 100)
+
+    decision = (
+        "AUTO_APPROVE" if score < 30 else
+        "FLAG_REVIEW"  if score < 70 else
+        "AUTO_REJECT"
+    )
+
+    return {
+        "fraud_score":  score,
+        "decision":     decision,
+        "reasons":      reasons,
+        "breakdown": {
+            "base_signals":       min(score, 100),
+            "gps_spoof_signals":  sum([
+                15 if data.coordinate_precision < 4 else 0,
+                35 if data.movement_speed_kmh > 200 else 0,
+                20 if data.stationary_minutes > 60 else 0,
+            ]),
+            "weather_signals":    sum([
+                40 if not data.event_verified else 0,
+                30 if not data.zone_affected else 0,
+            ]),
+            "platform_signals":   25 if data.platform_orders_2hr > 4 else 0,
+            "device_signals":     20 if (data.device_on_wifi and data.battery_charging) else 0,
+        }
+    }
+
+
+# ── Phase 3: Next Week Disruption Prediction ─────────────────────────────────
+
+# City-specific config for prediction
+CITY_CONFIG = {
+    'chennai':   {'triggers': {'rainfall': 64.5, 'heat': 42, 'aqi': 300}},
+    'mumbai':    {'triggers': {'rainfall': 64.5, 'heat': 40, 'aqi': 300}},
+    'delhi':     {'triggers': {'rainfall': 50,   'heat': 44, 'aqi': 400}},
+    'bengaluru': {'triggers': {'rainfall': 50,   'heat': 38, 'aqi': 300}},
+    'hyderabad': {'triggers': {'rainfall': 50,   'heat': 42, 'aqi': 300}},
+}
+
+TRIGGER_PAYOUT_PCT = {
+    'RAINFALL':     {'payout_pct': 75},
+    'EXTREME_HEAT': {'payout_pct': 60},
+    'SEVERE_AQI':   {'payout_pct': 50},
+}
+
+
+class NextWeekInput(BaseModel):
+    city:                   str
+    forecast_rainfall_mm:   float
+    forecast_max_temp:      float
+    forecast_aqi:           float
+    active_policies_count:  int
+    avg_premium:            float = 49.0
+
+
+@app.post("/predict-next-week")
+def predict_next_week(data: NextWeekInput):
+    cfg = CITY_CONFIG.get(data.city.lower(), CITY_CONFIG['chennai'])
+    t   = cfg['triggers']
+
+    # Probability calculation based on forecast vs historical thresholds
+    rain_prob  = min(data.forecast_rainfall_mm / 65,  1.0) * 0.85
+    heat_prob  = min(max(data.forecast_max_temp - 38, 0) / 5, 1.0) * 0.65
+    aqi_prob   = min(data.forecast_aqi / 400, 1.0) * 0.60
+    disruption_prob = min(max(rain_prob, heat_prob, aqi_prob) * 100, 99)
+
+    # Top risk trigger
+    probs = {
+        'RAINFALL':     rain_prob,
+        'EXTREME_HEAT': heat_prob,
+        'SEVERE_AQI':   aqi_prob,
+    }
+    top_trigger = max(probs, key=probs.get)
+
+    # Predicted claims and payouts
+    predicted_claim_rate  = disruption_prob / 100 * 0.85
+    predicted_claims      = round(data.active_policies_count * predicted_claim_rate)
+    payout_config         = TRIGGER_PAYOUT_PCT.get(top_trigger, {})
+    avg_payout_per_claim  = round((4500 / 7) * (payout_config.get('payout_pct', 75) / 100) * 0.5)
+    predicted_payout      = predicted_claims * avg_payout_per_claim
+    predicted_premiums    = data.active_policies_count * data.avg_premium
+    predicted_loss_ratio  = round((predicted_payout / predicted_premiums * 100) if predicted_premiums > 0 else 0)
+
+    recommended_action = (
+        "Raise new policy premiums 15% immediately"
+        if predicted_loss_ratio > 70 else
+        "Activate reinsurance pre-authorization"
+        if predicted_loss_ratio > 60 else
+        "Normal operations — monitor closely"
+        if predicted_loss_ratio > 40 else
+        "Low risk week — standard operations"
+    )
+
+    return {
+        "city":                   data.city,
+        "disruption_probability": round(disruption_prob),
+        "top_trigger":            top_trigger,
+        "predicted_claims":       predicted_claims,
+        "predicted_payout":       predicted_payout,
+        "predicted_loss_ratio":   predicted_loss_ratio,
+        "recommended_action":     recommended_action,
+        "risk_level":             "high" if disruption_prob > 65 else "medium" if disruption_prob > 35 else "low",
     }
 
 

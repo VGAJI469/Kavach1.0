@@ -8,7 +8,7 @@
 
 const ML_BASE = import.meta.env.VITE_ML_BASE_URL || 
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-    ? 'http://localhost:8000' 
+    ? 'http://127.0.0.1:8000' 
     : '/api');
 
 // ── Tier config (mirrors backend) ──────────────────────────────────────────
@@ -313,4 +313,89 @@ export async function pingML() {
   try {
     await fetch(`${ML_BASE}/health`, { method: 'GET', signal: AbortSignal.timeout(3000) });
   } catch (_) {}
+}
+
+/**
+ * Phase 3: Enhanced fraud scoring with GPS spoof, weather cross-check, device state
+ */
+export async function scoreFraudV2(params) {
+  try {
+    const res = await fetch(`${ML_BASE}/fraud-score-v2`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) return await res.json();
+  } catch (_) { /* backend unavailable */ }
+
+  // Fallback
+  return {
+    fraud_score: 12,
+    decision: 'AUTO_APPROVE',
+    reasons: [],
+    breakdown: {
+      base_signals: 12,
+      gps_spoof_signals: 0,
+      weather_signals: 0,
+      platform_signals: 0,
+      device_signals: 0,
+    },
+    source: 'client_fallback',
+  };
+}
+
+/**
+ * Phase 3: Next week disruption prediction per city
+ */
+export async function predictNextWeek(params) {
+  try {
+    const res = await fetch(`${ML_BASE}/predict-next-week`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) return await res.json();
+  } catch (_) { /* backend unavailable */ }
+
+  return {
+    city: params.city,
+    disruption_probability: 30,
+    top_trigger: 'RAINFALL',
+    predicted_claims: 20,
+    predicted_payout: 6000,
+    risk_level: 'low',
+    recommended_action: 'Low risk week — standard operations',
+    source: 'client_fallback',
+  };
+}
+
+/**
+ * Phase 3: Simulate a disruption trigger (dev mode)
+ */
+export async function simulateTrigger(city, trigger, value) {
+  try {
+    const res = await fetch(`${ML_BASE}/dev/simulate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ city, trigger, value }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) return await res.json();
+  } catch (_) { /* backend unavailable */ }
+
+  // Fallback simulation
+  const payoutAmount = Math.round((4000 / 56) * 4 * 0.4);
+  return {
+    simulation: true,
+    city,
+    trigger,
+    value,
+    fraud_score: 12,
+    decision: 'AUTO_APPROVE',
+    payout_amount: payoutAmount,
+    message: `₹${payoutAmount} auto-approved (simulated)`,
+    source: 'client_fallback',
+  };
 }

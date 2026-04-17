@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import FraudAuditCard from './FraudAuditCard';
 
 export default function ClaimsTable({ claims }) {
   const [expandedRow, setExpandedRow] = useState(null);
@@ -16,63 +17,6 @@ export default function ClaimsTable({ claims }) {
       case 'Rejected': return 'pill pill-red-dark';
       default:         return 'pill';
     }
-  };
-
-  const renderSignals = (signals) => {
-    const signalNames = {
-      gps: 'GPS zone match',
-      activity: 'Activity check',
-      duplicate: 'Duplicate check',
-      velocity: 'Claim velocity',
-      accountAge: 'Account age',
-    };
-
-    const totalScore = Object.values(signals).reduce((sum, s) => sum + s.score, 0);
-    const decision = totalScore < 30 ? 'AUTO_APPROVE' : totalScore < 70 ? 'MANUAL_REVIEW' : 'AUTO_REJECT';
-
-    return (
-      <div
-        style={{
-          background: 'var(--charcoal)',
-          borderRadius: '10px',
-          padding: '16px 20px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '13px',
-          lineHeight: 1.8,
-          color: 'var(--charcoal-muted)',
-          marginTop: '12px',
-        }}
-      >
-        {Object.entries(signals).map(([key, signal]) => (
-          <div key={key} style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>
-              {signalNames[key]}:{' '}
-              <span style={{ marginLeft: '8px' }}>
-                {signal.pass ? '✅ Pass' : '⚠️ Flag'}
-              </span>
-            </span>
-            <span style={{ color: signal.score > 0 ? 'var(--orange)' : 'var(--charcoal-muted)' }}>
-              (+{signal.score}){signal.note ? ` — ${signal.note}` : ''}
-            </span>
-          </div>
-        ))}
-        <div
-          style={{
-            borderTop: '1px solid rgba(255,255,255,0.1)',
-            marginTop: '8px',
-            paddingTop: '8px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontWeight: 600,
-          }}
-        >
-          <span>Total fraud score:</span>
-          <span style={{ color: getFraudColor(totalScore) }}>
-            {totalScore} / 100 → {decision}
-          </span>
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -150,9 +94,11 @@ export default function ClaimsTable({ claims }) {
             </span>
           </div>
 
-          {/* Expanded row */}
+          {/* Expanded row — Phase 3 Fraud Audit Card */}
           {expandedRow === claim.id && (
-            <div style={{ padding: '4px 0 16px' }}>{renderSignals(claim.signals)}</div>
+            <div style={{ padding: '4px 0 16px' }}>
+              <FraudAuditCard claim={claim} />
+            </div>
           )}
         </div>
       ))}
