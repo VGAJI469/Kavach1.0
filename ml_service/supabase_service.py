@@ -93,3 +93,68 @@ async def get_city_claim_velocity(city: str, minutes: int = 60) -> int:
     except Exception as e:
         print(f"[SupabaseService] Velocity check error: {e}")
         return 0
+
+
+async def upsert_worker_profile(worker: dict) -> bool:
+    """
+    Insert or update a worker profile in the Supabase workers table.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return False
+
+    url = f"{SUPABASE_URL}/rest/v1/workers"
+    headers = _headers()
+    headers["Prefer"] = "resolution=merge-duplicates"  # Upsert configuration for PostgREST
+
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.post(url, json=worker, headers=headers)
+            resp.raise_for_status()
+            return True
+    except Exception as e:
+        print(f"[SupabaseService] Worker upsert error: {e}")
+        return False
+
+
+async def create_claim(claim: dict) -> bool:
+    """
+    Insert a new claim record into the Supabase claims table.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return False
+
+    url = f"{SUPABASE_URL}/rest/v1/claims"
+
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.post(url, json=claim, headers=_headers())
+            resp.raise_for_status()
+            return True
+    except Exception as e:
+        print(f"[SupabaseService] Claim create error: {e}")
+        return False
+
+
+async def get_all_claims() -> list:
+    """
+    Fetch the list of all claims across all workers (for Admin Dashboard).
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return []
+
+    url = f"{SUPABASE_URL}/rest/v1/claims"
+    params = {
+        "select": "*",
+        "order": "triggered_at.desc",
+        "limit": "100"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(url, params=params, headers=_headers())
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        print(f"[SupabaseService] All claims fetch error: {e}")
+        return []
+

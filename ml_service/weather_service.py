@@ -25,6 +25,56 @@ def _get_ow_city(city: str) -> str:
     return CITY_MAP.get(city.lower(), {}).get("ow", f"{city},IN")
 
 
+CITY_COORDS = {
+    "chennai":   {"lat": 13.0827, "lon": 80.2707},
+    "mumbai":    {"lat": 19.0760, "lon": 72.8777},
+    "delhi":     {"lat": 28.6139, "lon": 77.2090},
+    "bengaluru": {"lat": 12.9716, "lon": 77.5946},
+    "bangalore": {"lat": 12.9716, "lon": 77.5946},
+    "hyderabad": {"lat": 17.3850, "lon": 78.4867},
+    "pune":      {"lat": 18.5204, "lon": 73.8567},
+    "kolkata":   {"lat": 22.5726, "lon": 88.3639},
+}
+
+
+async def _get_openmeteo_weather(city: str) -> Optional[dict]:
+    coords = CITY_COORDS.get(city.lower())
+    if not coords:
+        return None
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": coords["lat"],
+        "longitude": coords["lon"],
+        "current": "temperature_2m,relative_humidity_2m,rain,showers",
+        "timezone": "auto"
+    }
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            raw = resp.json()
+        current = raw.get("current", {})
+        temp = current.get("temperature_2m", 28.0)
+        humidity = current.get("relative_humidity_2m", 60)
+        rain_1h = current.get("rain", 0.0) + current.get("showers", 0.0)
+        
+        return {
+            "temp_c":       temp,
+            "feels_like_c": temp + 2.0,
+            "humidity":     humidity,
+            "rainfall_1h":  rain_1h,
+            "rainfall_3h":  rain_1h * 2,
+            "condition":    "Rain" if rain_1h > 0 else "Clear",
+            "description":  "rainy" if rain_1h > 0 else "clear sky",
+            "wind_speed":   3.5,
+            "city_name":    city.capitalize(),
+            "source":       "live_keyless",
+        }
+    except Exception as e:
+        print(f"[WeatherService] Open-Meteo error: {e}")
+        return None
+
+
 async def get_current_weather(city: str) -> dict:
     """
     Fetch current weather for a city.
@@ -40,14 +90,18 @@ async def get_current_weather(city: str) -> dict:
         source       — "live" or "fallback"
     """
     cache_key = f"weather_{city.lower()}"
-
+ 
     if _is_cached(cache_key):
         _, data = _cache[cache_key]
         return data
-
+ 
     if not OPENWEATHER_API_KEY:
+        openmeteo = await _get_openmeteo_weather(city)
+        if openmeteo:
+            _cache[cache_key] = (time.time(), openmeteo)
+            return openmeteo
         return _fallback_weather(city)
-
+ 
     ow_city = _get_ow_city(city)
     url = f"{BASE_URL}/weather"
     params = {
@@ -55,13 +109,13 @@ async def get_current_weather(city: str) -> dict:
         "appid": OPENWEATHER_API_KEY,
         "units": "metric",
     }
-
+ 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             raw = resp.json()
-
+ 
         data = {
             "temp_c":       raw["main"]["temp"],
             "feels_like_c": raw["main"]["feels_like"],
@@ -76,9 +130,13 @@ async def get_current_weather(city: str) -> dict:
         }
         _cache[cache_key] = (time.time(), data)
         return data
-
+ 
     except Exception as e:
         print(f"[WeatherService] Error fetching {city}: {e}")
+        openmeteo = await _get_openmeteo_weather(city)
+        if openmeteo:
+            _cache[cache_key] = (time.time(), openmeteo)
+            return openmeteo
         return _fallback_weather(city)
 
 

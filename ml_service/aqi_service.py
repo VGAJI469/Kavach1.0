@@ -23,6 +23,52 @@ def _get_aqi_city(city: str) -> str:
     return CITY_MAP.get(city.lower(), {}).get("aqi", city.lower())
 
 
+CITY_COORDS = {
+    "chennai":   {"lat": 13.0827, "lon": 80.2707},
+    "mumbai":    {"lat": 19.0760, "lon": 72.8777},
+    "delhi":     {"lat": 28.6139, "lon": 77.2090},
+    "bengaluru": {"lat": 12.9716, "lon": 77.5946},
+    "bangalore": {"lat": 12.9716, "lon": 77.5946},
+    "hyderabad": {"lat": 17.3850, "lon": 78.4867},
+    "pune":      {"lat": 18.5204, "lon": 73.8567},
+    "kolkata":   {"lat": 22.5726, "lon": 88.3639},
+}
+
+
+async def _get_openmeteo_aqi(city: str) -> dict | None:
+    coords = CITY_COORDS.get(city.lower())
+    if not coords:
+        return None
+    url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    params = {
+        "latitude": coords["lat"],
+        "longitude": coords["lon"],
+        "current": "us_aqi,pm2_5,pm10"
+    }
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            raw = resp.json()
+        current = raw.get("current", {})
+        aqi_val = current.get("us_aqi", 80)
+        pm25 = current.get("pm2_5")
+        pm10 = current.get("pm10")
+        
+        return {
+            "aqi":                int(aqi_val),
+            "dominant_pollutant": "pm25",
+            "category":           _aqi_category(aqi_val),
+            "pm25":               pm25,
+            "pm10":               pm10,
+            "station":            f"{city.capitalize()} Open-Meteo",
+            "source":             "live_keyless",
+        }
+    except Exception as e:
+        print(f"[AQIService] Open-Meteo error: {e}")
+        return None
+
+
 async def get_aqi(city: str) -> dict:
     """
     Fetch current AQI for a city.
@@ -35,32 +81,40 @@ async def get_aqi(city: str) -> dict:
         source            — "live" or "fallback"
     """
     cache_key = f"aqi_{city.lower()}"
-
+ 
     if _is_cached(cache_key):
         _, data = _cache[cache_key]
         return data
-
+ 
     if not AQICN_API_KEY:
+        openmeteo = await _get_openmeteo_aqi(city)
+        if openmeteo:
+            _cache[cache_key] = (time.time(), openmeteo)
+            return openmeteo
         return _fallback_aqi(city)
-
+ 
     aqi_city = _get_aqi_city(city)
     url = f"{BASE_URL}/{aqi_city}/"
     params = {"token": AQICN_API_KEY}
-
+ 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             raw = resp.json()
-
+ 
         if raw.get("status") != "ok":
             print(f"[AQIService] Non-ok response for {city}: {raw.get('data')}")
+            openmeteo = await _get_openmeteo_aqi(city)
+            if openmeteo:
+                _cache[cache_key] = (time.time(), openmeteo)
+                return openmeteo
             return _fallback_aqi(city)
-
+ 
         d = raw["data"]
         aqi_val = d.get("aqi", 0)
         iaqi = d.get("iaqi", {})
-
+ 
         data = {
             "aqi":                int(aqi_val) if isinstance(aqi_val, (int, float)) else 0,
             "dominant_pollutant": d.get("dominentpol", "pm25"),
@@ -72,9 +126,13 @@ async def get_aqi(city: str) -> dict:
         }
         _cache[cache_key] = (time.time(), data)
         return data
-
+ 
     except Exception as e:
         print(f"[AQIService] Error fetching {city}: {e}")
+        openmeteo = await _get_openmeteo_aqi(city)
+        if openmeteo:
+            _cache[cache_key] = (time.time(), openmeteo)
+            return openmeteo
         return _fallback_aqi(city)
 
 

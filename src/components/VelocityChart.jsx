@@ -1,32 +1,32 @@
 import { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div
+        style={{
+          background: 'var(--charcoal)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: '8px',
+          padding: '10px 14px',
+          fontSize: '13px',
+        }}
+      >
+        <p style={{ color: 'var(--charcoal-muted)', marginBottom: '4px' }}>{label}</p>
+        <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+          {payload[0].value} claims
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function VelocityChart({ data }) {
   const [showBanner, setShowBanner] = useState(true);
   const avg = data.reduce((a, b) => a + b.claims, 0) / data.length;
   const hasSpike = data.some((d) => d.claims > avg * 3);
-
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div
-          style={{
-            background: 'var(--charcoal)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '8px',
-            padding: '10px 14px',
-            fontSize: '13px',
-          }}
-        >
-          <p style={{ color: 'var(--charcoal-muted)', marginBottom: '4px' }}>{label}</p>
-          <p style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-            {payload[0].value} claims
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="admin-card">

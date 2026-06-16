@@ -16,7 +16,7 @@ try:
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
-    print("[Model] ml_models not available — using rule-based fallback only")
+    print("[Model] ml_models not available - using rule-based fallback only")
 
 # ── Tier config ──────────────────────────────────────────────────────────────
 TIERS = {

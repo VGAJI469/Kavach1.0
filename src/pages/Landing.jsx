@@ -96,7 +96,7 @@ export default function Landing() {
           {
             num: '03', title: 'Built for your cycle', body: "Weekly premiums because you earn weekly. No monthly lock-ins, no surprises.", stat: 'From ₹29/week'
           }
-        ].map((feat, idx) => (
+        ].map((feat) => (
           <div key={feat.num} className="feature-block" style={{ borderBottom: '1px solid var(--landing-border)', padding: '48px 24px' }}>
             <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', gap: '32px', alignItems: 'flex-start' }}>
               <div className="feature-block-number" style={{ fontFamily: 'var(--font-editorial)', fontStyle: 'italic', fontSize: '64px', lineHeight: 1, minWidth: '100px' }}>

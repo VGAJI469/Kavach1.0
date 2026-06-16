@@ -50,7 +50,11 @@ function FlyToLocation({ position }) {
 // ── Main component ──────────────────────────────────────────────────────────
 export default function DriverMap() {
     const [driverPos, setDriverPos] = useState(null);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState(() =>
+        typeof navigator !== 'undefined' && !navigator.geolocation
+            ? 'Geolocation not supported by your browser'
+            : null
+    );
     const [watching, setWatching] = useState(false);
     const watchId = useRef(null);
 
@@ -59,8 +63,7 @@ export default function DriverMap() {
     const defaultZoom = 5;
 
     useEffect(() => {
-        if (!navigator.geolocation) {
-            setError('Geolocation not supported by your browser');
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
             return;
         }
 
