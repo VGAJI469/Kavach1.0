@@ -777,7 +777,8 @@ function ResultStep({ onboarding }) {
 
 // ─── Main Onboarding Page ───
 export default function Onboarding() {
-  const { onboarding, setOnboardingField, nextStep, prevStep, setOtpDigit, completeOnboarding } =
+  const navigate = useNavigate();
+  const { onboarding, setOnboardingField, nextStep, prevStep, setOtpDigit, completeOnboarding, checkExistingProfile } =
     useKavachStore();
   const [direction, setDirection] = useState(1);
   const completingRef = useRef(false);
@@ -811,6 +812,13 @@ export default function Onboarding() {
     // Guard against multiple calls (rapid OTP entry can trigger this)
     if (completingRef.current) return;
     completingRef.current = true;
+
+    // Check if worker profile already exists in Supabase
+    const exists = await checkExistingProfile(onboarding.phone);
+    if (exists) {
+      navigate('/dashboard');
+      return;
+    }
 
     setDirection(1);
     // Call ML backend BEFORE advancing to result step

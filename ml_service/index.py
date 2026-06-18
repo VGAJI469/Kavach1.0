@@ -13,7 +13,14 @@ import httpx
 from config import validate_config
 from weather_service import get_current_weather, get_forecast
 from aqi_service import get_aqi
-from supabase_service import get_worker_claims_history, get_worker_profile, get_city_claim_velocity
+from supabase_service import (
+    get_worker_claims_history,
+    get_worker_profile,
+    get_city_claim_velocity,
+    upsert_worker_profile,
+    create_claim,
+    get_all_claims
+)
 from model import predict_premium, score_fraud, calculate_kavach_score
 
 validate_config()
@@ -23,7 +30,7 @@ try:
     from ml_models import train_models
     train_models()
 except Exception as e:
-    print(f"[ML] Model training failed — using rule-based fallback: {e}")
+    print(f"[ML] Model training failed - using rule-based fallback: {e}")
 
 app = FastAPI(
     title="Kavach ML Service",
@@ -201,7 +208,50 @@ async def get_conditions(city: str):
     }
 
 
-# ── Dev Simulate (demo only) ──────────────────────────────────────────────────
+# ── Worker & Claims REST API ──────────────────────────────────────────────────
+
+class WorkerProfile(BaseModel):
+    id:              str
+    name:            str
+    city:            str
+    platform:        str
+    weekly_earnings: float
+    risk_score:      int = 0
+    created_at:      Optional[str] = None
+
+
+@app.get("/workers/{worker_id}")
+async def get_worker_profile_endpoint(worker_id: str):
+    profile = await get_worker_profile(worker_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Worker profile not found")
+    return profile
+
+
+@app.post("/workers")
+async def create_worker_profile_endpoint(req: WorkerProfile):
+    worker_dict = req.dict(exclude_none=True)
+    if not worker_dict.get("created_at"):
+        worker_dict["created_at"] = datetime.datetime.utcnow().isoformat()
+    success = await upsert_worker_profile(worker_dict)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save worker profile in database")
+    return {"status": "success", "worker": worker_dict}
+
+
+@app.get("/claims")
+async def get_all_claims_endpoint():
+    claims_list = await get_all_claims()
+    return claims_list
+
+
+@app.get("/claims/{worker_id}")
+async def get_worker_claims_endpoint(worker_id: str):
+    claims_list = await get_worker_claims_history(worker_id)
+    return claims_list
+
+
+# ── Dev Simulate & Claims Engine ──────────────────────────────────────────────
 
 class SimulateRequest(BaseModel):
     city:      str   = Field(..., example="chennai")
@@ -222,25 +272,73 @@ PAYOUT_PCT = {
 @app.post("/dev/simulate")
 async def simulate_disruption(req: SimulateRequest):
     """
-    DEV ONLY — Simulate a disruption trigger for demo purposes.
-    Runs fraud score and returns what the automated decision would be.
+    Simulate a disruption trigger for demo and testing.
+    Runs live fraud score, calculates payout, and writes the claim to Supabase.
     """
-    weekly_earnings = 4000.0  # default demo earnings
+    weekly_earnings = 4000.0  # default fallback
+    tenure_weeks = 12         # default fallback
+    claims_90d = 0
+    hist_avg = None
+
+    # Fetch worker profile if ID provided to perform real calculations
+    if req.worker_id:
+        profile = await get_worker_profile(req.worker_id)
+        if profile:
+            weekly_earnings = float(profile.get("weekly_earnings", 4000.0))
+            # Calculate tenure in weeks from created_at
+            created_at_str = profile.get("created_at")
+            if created_at_str:
+                try:
+                    created_at = datetime.datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                    delta = datetime.datetime.now(datetime.timezone.utc) - created_at
+                    tenure_weeks = max(0, delta.days // 7)
+                except Exception:
+                    pass
+
+            # Fetch actual claims history for fraud engine loading
+            past_claims = await get_worker_claims_history(req.worker_id)
+            if past_claims:
+                claims_90d = len(past_claims)
+                paid = [c["payout_amount"] for c in past_claims if c.get("status") == "approved" or c.get("status") == "Approved"]
+                if paid:
+                    hist_avg = sum(paid) / len(paid)
 
     fraud_result = await score_fraud(
         trigger_type=req.trigger,
         trigger_value=req.value,
-        tenure_weeks=12,
-        claims_90d=0,
+        tenure_weeks=tenure_weeks,
+        claims_90d=claims_90d,
         weekly_earnings=weekly_earnings,
         gps_match=True,
         has_duplicate=False,
+        historical_avg_earnings=hist_avg,
     )
 
     disrupted_hours = 4
     payout = round(
         (weekly_earnings / 56) * disrupted_hours * PAYOUT_PCT.get(req.trigger, 0.3)
     )
+    payout_val = payout if fraud_result["decision"] == "AUTO_APPROVE" else 0
+
+    # Translate decision status for Supabase
+    status_translation = {
+        "AUTO_APPROVE": "Approved",
+        "REVIEW":       "Pending",
+        "AUTO_REJECT":  "Rejected"
+    }
+    supabase_status = status_translation.get(fraud_result["decision"], "Pending")
+
+    claim_record = {
+        "worker_id":     req.worker_id or "WRK-4515",
+        "trigger_type":  req.trigger,
+        "payout_amount": payout_val,
+        "status":        supabase_status,
+        "fraud_score":   fraud_result["fraud_score"],
+        "triggered_at":  datetime.datetime.utcnow().isoformat()
+    }
+
+    # Write the claim to Supabase
+    await create_claim(claim_record)
 
     return {
         "simulation":    True,
@@ -250,11 +348,12 @@ async def simulate_disruption(req: SimulateRequest):
         "fraud_score":   fraud_result["fraud_score"],
         "decision":      fraud_result["decision"],
         "signals":       fraud_result["signals"],
-        "payout_amount": payout if fraud_result["decision"] == "AUTO_APPROVE" else 0,
+        "payout_amount": payout_val,
+        "claim":         claim_record,
         "message": (
-            f"₹{payout} auto-approved" if fraud_result["decision"] == "AUTO_APPROVE"
-            else "Flagged for review" if fraud_result["decision"] == "REVIEW"
-            else "Auto-rejected"
+            f"₹{payout_val} auto-approved & saved to database" if fraud_result["decision"] == "AUTO_APPROVE"
+            else "Flagged for review & saved to database" if fraud_result["decision"] == "REVIEW"
+            else "Auto-rejected & saved to database"
         ),
     }
 

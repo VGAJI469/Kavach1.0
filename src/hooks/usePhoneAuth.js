@@ -10,7 +10,8 @@ import { auth } from '../firebase';
  * This lets you test the full flow without Firebase Phone Auth enabled.
  */
 
-const IS_DEV = import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.port === '5173';
+const STRICT_AUTH = import.meta.env.VITE_STRICT_FIREBASE_AUTH === 'true';
+const IS_DEV = !STRICT_AUTH && (import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.port === '5173');
 
 export default function usePhoneAuth() {
     const [loading, setLoading] = useState(false);
@@ -23,7 +24,7 @@ export default function usePhoneAuth() {
     const setupRecaptcha = useCallback((containerId = 'recaptcha-container') => {
         // Clean up previous instance
         if (recaptchaRef.current) {
-            try { recaptchaRef.current.clear(); } catch { }
+            try { recaptchaRef.current.clear(); } catch { /* ignore */ }
             recaptchaRef.current = null;
         }
 
@@ -86,7 +87,7 @@ export default function usePhoneAuth() {
                 'auth/internal-error',
             ];
 
-            if (IS_DEV || bypassCodes.includes(err.code) || err.message?.includes('billing-not-enabled')) {
+            if (!STRICT_AUTH && (IS_DEV || bypassCodes.includes(err.code) || err.message?.includes('billing-not-enabled'))) {
                 console.warn(`[PhoneAuth] Falling back to Demo Mode due to: ${err.code || 'unknown error'}`);
                 setDevMode(true);
                 setLoading(false);
@@ -157,7 +158,7 @@ export default function usePhoneAuth() {
         setDevMode(false);
         confirmationRef.current = null;
         if (recaptchaRef.current) {
-            try { recaptchaRef.current.clear(); } catch { }
+            try { recaptchaRef.current.clear(); } catch { /* ignore */ }
             recaptchaRef.current = null;
         }
     }, []);

@@ -19,7 +19,7 @@ def validate_config():
     if not AQICN_API_KEY:       missing.append("AQICN_API_KEY")
     if not SUPABASE_URL:        missing.append("SUPABASE_URL")
     if missing:
-        print(f"⚠️  Missing env vars: {', '.join(missing)} — some features will degrade gracefully.")
+        print(f"[WARNING] Missing env vars: {', '.join(missing)} - some features will degrade gracefully.")
 
 # City name mappings (OpenWeather & AQICN use different names)
 CITY_MAP = {

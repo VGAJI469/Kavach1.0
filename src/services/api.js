@@ -134,7 +134,7 @@ export async function lookupPincode(pincode) {
   try {
     const res = await fetch(`${ML_BASE}/lookup-pincode/${pincode}`, { signal: AbortSignal.timeout(5000) });
     if (res.ok) return await res.json();
-  } catch (_) { /* backend unavailable, try direct */ }
+  } catch { /* backend unavailable, try direct */ }
 
   // Attempt 2: Direct India Post API (works from browser, has CORS)
   try {
@@ -168,7 +168,7 @@ export async function lookupPincode(pincode) {
         }
       }
     }
-  } catch (_) { /* India Post API also failed */ }
+  } catch { /* India Post API also failed */ }
 
   // Attempt 3: Client-side fallback (always works)
   return fallbackPincode(pincode);
@@ -195,7 +195,7 @@ export async function getKavachScore(city, platform, earningsBracket, month = nu
       signal: AbortSignal.timeout(8000),
     });
     if (res.ok) return await res.json();
-  } catch (_) { /* backend unavailable */ }
+  } catch { /* backend unavailable */ }
 
   // Client-side fallback
   const m = month || new Date().getMonth() + 1;
@@ -235,7 +235,7 @@ export async function getPremiumPrediction(city, month, tenureWeeks, weeklyEarni
       signal: AbortSignal.timeout(8000),
     });
     if (res.ok) return await res.json();
-  } catch (_) { /* backend unavailable */ }
+  } catch { /* backend unavailable */ }
 
   // Client-side fallback
   const tier = weeklyEarnings <= 3000 ? 'basic' : weeklyEarnings <= 5000 ? 'standard' : 'pro';
@@ -273,7 +273,7 @@ export async function getCityConditions(city) {
       signal: AbortSignal.timeout(8000),
     });
     if (res.ok) return await res.json();
-  } catch (_) { /* backend unavailable */ }
+  } catch { /* backend unavailable */ }
 
   // Fallback
   return {
@@ -297,7 +297,7 @@ export async function scoreFraud(params) {
       signal: AbortSignal.timeout(8000),
     });
     if (res.ok) return await res.json();
-  } catch (_) { /* backend unavailable */ }
+  } catch { /* backend unavailable */ }
 
   // Minimal fallback
   return {
@@ -312,5 +312,56 @@ export async function scoreFraud(params) {
 export async function pingML() {
   try {
     await fetch(`${ML_BASE}/health`, { method: 'GET', signal: AbortSignal.timeout(3000) });
-  } catch (_) {}
+  } catch { /* ignore */ }
+}
+
+export async function upsertWorkerProfile(profile) {
+  const res = await fetch(`${ML_BASE}/workers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to upsert worker: ${res.statusText}`);
+  }
+  return await res.json();
+}
+
+export async function getWorkerProfile(workerId) {
+  const res = await fetch(`${ML_BASE}/workers/${encodeURIComponent(workerId)}`);
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    throw new Error(`Failed to fetch worker: ${res.statusText}`);
+  }
+  return await res.json();
+}
+
+export async function getWorkerClaims(workerId) {
+  const res = await fetch(`${ML_BASE}/claims/${encodeURIComponent(workerId)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch worker claims: ${res.statusText}`);
+  }
+  return await res.json();
+}
+
+export async function getAllClaims() {
+  const res = await fetch(`${ML_BASE}/claims`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch all claims: ${res.statusText}`);
+  }
+  return await res.json();
+}
+
+export async function simulateDisruption(city, trigger, value, workerId = null) {
+  const body = { city, trigger, value };
+  if (workerId) body.worker_id = workerId;
+  const res = await fetch(`${ML_BASE}/dev/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Simulation failed: ${res.statusText}`);
+  }
+  return await res.json();
 }
